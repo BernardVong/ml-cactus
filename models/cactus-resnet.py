@@ -16,7 +16,6 @@ from keras.utils import np_utils
 from sklearn.model_selection import train_test_split
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-
 num_classes = 2
 
 project_path = os.getcwd().replace("/models", "")
