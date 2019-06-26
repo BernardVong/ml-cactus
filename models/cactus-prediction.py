@@ -3,43 +3,70 @@ import cv2
 import numpy as np
 import pandas as pd
 # MacOS : fix compatibility
+from keras.backend import binary_crossentropy
 from keras.engine.saving import model_from_json
+from keras.optimizers import Adam
 from keras.utils import np_utils
 from sklearn.model_selection import train_test_split
-
-
+from talos.model import lr_normalizer
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
 # GLOBALS
 PROJECT_PATH = os.getcwd().replace("/models", "")
-filename = ''
+BACKUP_PATH = PROJECT_PATH + "/models/backup"
+PREDICTIONS_PATH = PROJECT_PATH + "/models/predictions"
+
+# GLOBALS
+filename = 'resnet_relu(64)*5_softmax(2)_Adam_lr0.76_bs25.00_binarycrossentropy_1561569065_40'
+params = {
+    "losses": binary_crossentropy,
+    "optimizer": Adam,
+    "lr": 2.44,
+}
 
 
-def imagesToDataset(paths):
+def imagesToDataset(path):
     data = []
-    for filepath in paths:
-        file = cv2.imread(filepath).astype(np.float32)/255
+
+    files = os.listdir(path)
+    for filepath in files:
+        file = cv2.imread(path + filepath).astype(np.float32)/255
         data.append(file)
-    return np.array(data)
+    return np.array(data), files
 
 
-# load dataset
-files = [PROJECT_PATH + '/data/test/']
-dataset = imagesToDataset(files)
+def build_model():
+    # load json
+    json_file = open(BACKUP_PATH + "/" + filename + '.json', 'r')
+    model_json = json_file.read()
+    json_file.close()
+
+    # load weights
+    new_model = model_from_json(model_json)
+    new_model.load_weights(BACKUP_PATH + "/" + filename + ".h5")
+
+    return new_model
 
 
-# load model json
-json_file = open(filename + '.json', 'r')
-model_json = json_file.read()
-json_file.close()
-
-# load model weights
-model = model_from_json(model_json)
-model.load_weights(filename + ".h5")
+dataset, filenames = imagesToDataset(PROJECT_PATH + '/data/test/')
 
 
-model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
-score = model.evaluate(dataset, verbose=0)
-print("%s: %.2f%%" % (model.metrics_names[1], score[1] * 100))
+model = build_model()
+model.summary()
+model.compile(loss=params['losses'],
+              optimizer=params['optimizer'](lr=lr_normalizer(params['lr'], params['optimizer'])),
+              metrics=['accuracy'])
+
+results = model.predict(x=dataset)
+
+# clean predict
+hascactus_column_results = np.rint(results[:, [1]]).astype(int)
+clean_results = np.column_stack([filenames, hascactus_column_results])
+
+# export
+np.savetxt(
+    PREDICTIONS_PATH + "/" + filename + ".csv", clean_results,
+    header="id,has_cactus",
+    delimiter=",", fmt="%s", comments='')

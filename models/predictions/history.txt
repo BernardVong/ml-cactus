@@ -1,0 +1,1 @@
+cactus_submit_1=resnet_relu(64)*5_softmax(2)_Adam_lr0.76_bs25.00_binarycrossentropy_1561569065_40
