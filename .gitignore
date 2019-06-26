@@ -1,5 +1,5 @@
 .idea
 data/*
-logs_tensorboard/*
-logs_mlflow/*
+logs_tensorboard/*/
+logs_mlflow/*/
 models/*.csv

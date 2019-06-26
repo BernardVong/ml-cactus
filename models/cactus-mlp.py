@@ -2,22 +2,18 @@ import os
 import time
 
 import cv2
-import mlflow
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from mlflow import keras as mlf_keras
-from mlflow.tracking import MlflowClient
-from talos import live, Scan
 from keras.activations import sigmoid, relu
 from keras.callbacks import TensorBoard, LambdaCallback
-from keras.layers import Dense, MaxPooling2D, Dropout, Flatten
+from keras.layers import Dense, Dropout, Flatten
 from keras.losses import mse, binary_crossentropy
 from keras.models import Sequential
 from keras.optimizers import sgd, Adam
 from keras.utils import np_utils
+from mlflow.tracking import MlflowClient
 from sklearn.model_selection import train_test_split
-
+from talos import Scan
 # MacOS : fix compatibility
 from talos.model import lr_normalizer, hidden_layers
 
@@ -30,9 +26,10 @@ MODEL_CURRENT_PARAMS = None
 NUM_CLASSES = 2
 PROJECT_MODEL = "mlp"
 MLFLOW_ENVIRONMENT = 1
+model = None
 
 mlf_client = MlflowClient(tracking_uri=PROJECT_PATH + '/logs_mlflow')
-mlf_experiments = mlf_client.list_experiments()
+mlf_experiment = mlf_client.get_experiment_by_name("cactus")
 
 params = {
     'lr': (0.5, 5, 10),
@@ -74,13 +71,13 @@ def data_processing():
 
 ''' LOGS MANAGERS '''
 def logs_name(p):
-
     current_params = {
         "lr": format(p['lr'], '.2f'),
         "bs": format(p['batch_size'], '.2f'),
         "first_neuron": str(p['first_neuron']),
         "layers": str(p['hidden_layers'] + 1),
         "activation": p['activation'].__name__,
+        "last_activation": p['last_activation'].__name__,
         "optimizer": p['optimizer'].__name__,
         "losses": p['losses'].__name__.replace("_", ""),
         "timestamp": str(round(time.time())),
@@ -90,7 +87,7 @@ def logs_name(p):
 
     logs_model = PROJECT_MODEL
     logs_folder = PROJECT_PATH + "/logs_tensorboard/mlp_trash/"
-    logs_layers = current_params["activation"] + "(" + current_params["first_neuron"] + ")*" + current_params["layers"] + "_" + current_params["activation"] + "(" + str(NUM_CLASSES) + ")"
+    logs_layers = current_params["activation"] + "(" + current_params["first_neuron"] + ")*" + current_params["layers"] + "_" + current_params["last_activation"] + "(" + str(NUM_CLASSES) + ")"
     logs_hyperparams = current_params["optimizer"] + "_lr" + current_params["lr"] + "_bs" + current_params["bs"] + "_" + current_params["losses"]
     current_params["logs_name"] = logs_model + "_" + logs_layers + "_" + logs_hyperparams + '_' + current_params["timestamp"]
     current_params["logs_name_path"] = logs_folder + current_params["logs_name"]
@@ -122,16 +119,20 @@ def logs_on_epoch_end(epoch, logs=None):
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="val_acc", value=logs["val_acc"], step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="val_loss", value=logs["val_loss"], step=epoch)
 
+    # save model
+    model.save_weights(PROJECT_PATH + "/models/backup/" + MODEL_CURRENT_PARAMS["logs_name"] + "_" + str(epoch) + ".h5")
+
 
 def logs_refresh_mlf_run(logs=None):
     global mlf_run
-    mlf_run = mlf_client.create_run(mlf_experiments[MLFLOW_ENVIRONMENT].experiment_id)
+    mlf_run = mlf_client.create_run(mlf_experiment.experiment_id)
 ''' LOGS MANAGERS END '''
 
 
 def cactus_model(x_train, y_train, x_test, y_test, p):
 
     # create and train model
+    global model
     model = Sequential()
     model.add(Flatten(input_shape=(32, 32, 3)))
 
@@ -163,7 +164,6 @@ def cactus_model(x_train, y_train, x_test, y_test, p):
         verbose=0
     )
 
-    #mlf_keras.save_model(model, PROJECT_PATH + "/models/backup/")
 
     return history, model
 
