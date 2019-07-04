@@ -1,1 +1,2 @@
-cactus_submit_1=resnet_relu(64)*5_softmax(2)_Adam_lr0.76_bs25.00_binarycrossentropy_1561569065_40
+cactus-submit-1=resnet_relu(64)*5_softmax(2)_Adam_lr0.76_bs25.00_binarycrossentropy_1561569065_40
+cactus-submit-2=resnet_relu(64)*2_softmax(2)_Adam_lr1.32_bs54.00_meansquarederror_1561576974_45

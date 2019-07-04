@@ -24,3 +24,13 @@ mkdir ~/cactus
 
 export MLFLOW_TRACKING_URI=/mnt/mlflow/logs
 mlflow server --host 0.0.0.0 --backend-store-uri file:///mnt/mlflow/logs
+
+
+
+
+# pull fat dataset
+sudo apt-get install -y nfs-common
+sudo mkdir /mnt/keras
+sudo mount 10.251.141.42:/keras /mnt/keras
+sudo chmod go+rwx /mnt/keras/
+mkdir /mnt/keras/data

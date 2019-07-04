@@ -2,48 +2,61 @@ import os
 import time
 
 import cv2
+import keras
 import numpy as np
 import pandas as pd
-from keras.activations import sigmoid, relu
+import tensorflow as tf
+from keras import Input, Model
+from keras.activations import relu, softmax, tanh, sigmoid
 from keras.callbacks import TensorBoard, LambdaCallback
-from keras.layers import Dense, Dropout, Flatten
+from keras.layers import Dense, Flatten, Conv2D, BatchNormalization, Activation, \
+    AveragePooling2D, Add, Dropout
 from keras.losses import mse, binary_crossentropy
-from keras.models import Sequential
 from keras.optimizers import sgd, Adam
+from keras.regularizers import l2
 from keras.utils import np_utils
 from mlflow.tracking import MlflowClient
 from sklearn.model_selection import train_test_split
 from talos import Scan
-# MacOS : fix compatibility
-from talos.model import lr_normalizer, hidden_layers
+from talos.model import lr_normalizer
+from talos.utils.gpu_utils import parallel_gpu_jobs
 
+
+# MacOS : fix compatibility
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
 # GLOBALS
 PROJECT_PATH = os.getcwd().replace("/models", "")
-MODEL_CURRENT_PARAMS = None
+
+# GLOBALS ENV
+ENV = "remote"
+MLFLOW_PATH = PROJECT_PATH + '/logs_mlflow' if ENV == "local" else '/mnt/mlflow/logs'
+MODELS_BACKUP = PROJECT_PATH + "/models/backup" if ENV == "local" else '/mnt/mlflow/backup'
+
+# GLOBALS MODEL
 NUM_CLASSES = 2
 PROJECT_MODEL = "mlp"
-MLFLOW_ENVIRONMENT = 1
 model = None
+MODEL_CURRENT_PARAMS = None
 
-mlf_client = MlflowClient(tracking_uri=PROJECT_PATH + '/logs_mlflow')
+
+mlf_client = MlflowClient(tracking_uri=MLFLOW_PATH)
 mlf_experiment = mlf_client.get_experiment_by_name("cactus")
 
 params = {
-    'lr': (0.5, 5, 10),
-    'first_neuron': [16, 32, 64],
-    'hidden_layers': [2],
-    'batch_size': (32, 64, 10),
-    'epochs': [20],
+    'lr': (0.2, 3, 10),
+    'first_neuron': [32, 64],
+    'hidden_layers': (4, 8, 10),
+    'batch_size': [64, 128],
+    'epochs': [25],
     'dropout': (0, 0.5, 5),
     'weight_regulizer': [None],
     'emb_output_dims': [None],
     'shapes': ['brick', 'funnel'],
-    'optimizer': [Adam, sgd],
+    'optimizer': [Adam],
     'losses': [mse, binary_crossentropy],
-    'activation': [relu],
+    'activation': [tanh],
     'last_activation': [sigmoid]
 }
 
@@ -102,25 +115,35 @@ def logs_on_epoch_end(epoch, logs=None):
     if not logs:
         return
 
+    # SETUP PARAMS
     mlf_client.log_param(run_id=mlf_run.info.run_id, key="model", value=MODEL_CURRENT_PARAMS["logs_name"])
     mlf_client.log_param(run_id=mlf_run.info.run_id, key="activation", value=MODEL_CURRENT_PARAMS["activation"])
     mlf_client.log_param(run_id=mlf_run.info.run_id, key="optimizer", value=MODEL_CURRENT_PARAMS["optimizer"])
     mlf_client.log_param(run_id=mlf_run.info.run_id, key="losses", value=MODEL_CURRENT_PARAMS["losses"])
 
+    # SETUP METRICS
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="lr", value=float(MODEL_CURRENT_PARAMS["lr"]), step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="bs", value=float(MODEL_CURRENT_PARAMS["bs"]), step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="first_neuron", value=float(MODEL_CURRENT_PARAMS["first_neuron"]), step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="layers", value=float(MODEL_CURRENT_PARAMS["layers"]), step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="timestamp", value=float(MODEL_CURRENT_PARAMS["timestamp"]), step=epoch)
 
-    # train
+    # SETUP METRICS RESULTS
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="acc", value=logs["acc"], step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="loss", value=logs["loss"], step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="val_acc", value=logs["val_acc"], step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="val_loss", value=logs["val_loss"], step=epoch)
 
-    # save model
-    model.save_weights(PROJECT_PATH + "/models/backup/" + MODEL_CURRENT_PARAMS["logs_name"] + "_" + str(epoch) + ".h5")
+
+    model_save_name = MODELS_BACKUP + "/" + MODEL_CURRENT_PARAMS["logs_name"] + "_" + str(epoch)
+
+    # save model JSON
+    model_json = model.to_json()
+    with open(model_save_name + ".json", "w") as json_file:
+        json_file.write(model_json)
+
+    # save model H5
+    model.save_weights(model_save_name + ".h5")
 
 
 def logs_refresh_mlf_run(logs=None):

@@ -5,6 +5,7 @@ import pandas as pd
 # MacOS : fix compatibility
 from keras.backend import binary_crossentropy
 from keras.engine.saving import model_from_json
+from keras.losses import mse
 from keras.optimizers import Adam
 from keras.utils import np_utils
 from sklearn.model_selection import train_test_split
@@ -19,11 +20,11 @@ BACKUP_PATH = PROJECT_PATH + "/models/backup"
 PREDICTIONS_PATH = PROJECT_PATH + "/models/predictions"
 
 # GLOBALS
-filename = 'resnet_relu(64)*5_softmax(2)_Adam_lr0.76_bs25.00_binarycrossentropy_1561569065_40'
+filename = 'resnet_relu(64)*2_softmax(2)_Adam_lr1.32_bs54.00_meansquarederror_1561576974_45'
 params = {
-    "losses": binary_crossentropy,
+    "losses": mse,
     "optimizer": Adam,
-    "lr": 2.44,
+    "lr": 1.32,
 }
 
 

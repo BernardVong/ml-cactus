@@ -2,13 +2,15 @@ import os
 import time
 
 import cv2
+import keras
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from keras import Input, Model
-from keras.activations import relu, softmax
+from keras.activations import relu, softmax, tanh, sigmoid
 from keras.callbacks import TensorBoard, LambdaCallback
 from keras.layers import Dense, Flatten, Conv2D, BatchNormalization, Activation, \
-    AveragePooling2D, Add
+    AveragePooling2D, Add, Dropout
 from keras.losses import mse, binary_crossentropy
 from keras.optimizers import sgd, Adam
 from keras.regularizers import l2
@@ -16,9 +18,11 @@ from keras.utils import np_utils
 from mlflow.tracking import MlflowClient
 from sklearn.model_selection import train_test_split
 from talos import Scan
-# MacOS : fix compatibility
 from talos.model import lr_normalizer
+from talos.utils.gpu_utils import parallel_gpu_jobs
 
+
+# MacOS : fix compatibility
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
@@ -42,18 +46,18 @@ mlf_experiment = mlf_client.get_experiment_by_name("cactus")
 
 params = {
     'lr': (0.2, 3, 10),
-    'first_neuron': [16, 32, 64],
-    'hidden_layers': (1, 5, 10),
-    'batch_size': (16, 64, 10),
-    'epochs': [50],
+    'first_neuron': [32, 64],
+    'hidden_layers': (4, 8, 10),
+    'batch_size': [64, 128],
+    'epochs': [25],
     'dropout': (0, 0.5, 5),
     'weight_regulizer': [None],
     'emb_output_dims': [None],
     'shapes': ['brick', 'funnel'],
-    'optimizer': [Adam, sgd],
+    'optimizer': [Adam],
     'losses': [mse, binary_crossentropy],
-    'activation': [relu],
-    'last_activation': [softmax]
+    'activation': [tanh],
+    'last_activation': [sigmoid]
 }
 
 
@@ -74,7 +78,7 @@ def data_processing():
     files = [PROJECT_PATH + '/data/train/' + file for file in train_csv['id'].tolist()]
     trains = imagesToDataset(files)
     labels = np_utils.to_categorical(train_csv['has_cactus'].tolist(), 2)
-    return train_test_split(trains, labels, test_size=0.33)
+    return train_test_split(trains, labels, test_size=0.20)
 ''' DATA PROCESSING END '''
 
 
@@ -111,18 +115,20 @@ def logs_on_epoch_end(epoch, logs=None):
     if not logs:
         return
 
+    # SETUP PARAMS
     mlf_client.log_param(run_id=mlf_run.info.run_id, key="model", value=MODEL_CURRENT_PARAMS["logs_name"])
     mlf_client.log_param(run_id=mlf_run.info.run_id, key="activation", value=MODEL_CURRENT_PARAMS["activation"])
     mlf_client.log_param(run_id=mlf_run.info.run_id, key="optimizer", value=MODEL_CURRENT_PARAMS["optimizer"])
     mlf_client.log_param(run_id=mlf_run.info.run_id, key="losses", value=MODEL_CURRENT_PARAMS["losses"])
 
+    # SETUP METRICS
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="lr", value=float(MODEL_CURRENT_PARAMS["lr"]), step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="bs", value=float(MODEL_CURRENT_PARAMS["bs"]), step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="first_neuron", value=float(MODEL_CURRENT_PARAMS["first_neuron"]), step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="layers", value=float(MODEL_CURRENT_PARAMS["layers"]), step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="timestamp", value=float(MODEL_CURRENT_PARAMS["timestamp"]), step=epoch)
 
-    # train
+    # SETUP METRICS RESULTS
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="acc", value=logs["acc"], step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="loss", value=logs["loss"], step=epoch)
     mlf_client.log_metric(run_id=mlf_run.info.run_id, key="val_acc", value=logs["val_acc"], step=epoch)
@@ -162,6 +168,8 @@ def resnet_layer(inputs, model_params, with_activation=True, num_filters=16):
     new_layer = BatchNormalization()(new_layer)
     if with_activation:
         new_layer = Activation(model_params['activation'])(new_layer)
+    new_layer = Dropout(model_params['dropout'])(new_layer)
+
     return new_layer
 
 
