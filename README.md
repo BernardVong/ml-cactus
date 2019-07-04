@@ -16,12 +16,12 @@ Competition here : https://www.kaggle.com/c/aerial-cactus-identification/
 
 
 ### logs with Tensorboard
-```
+```Bash
 tensorboard --logdir=logs_tensorboard &
 ```
 
 ### logs with MLFlow
-```
-PROJECT_PATH/src/main/scala/com/felicita/_utils/routes.postman_collection.json
+```Bash
+mlflow server --host 0.0.0.0 --backend-store-uri file:///project_path/logs_mlflow
 ```
 
